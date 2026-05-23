@@ -291,20 +291,23 @@ def page_employee_detail(df: pd.DataFrame) -> None:
             render_info_box(label, value)
 
     st.subheader("多维评分")
-    score_cols = st.columns(6)
+    score_cols = st.columns(5)
     score_items = [
         ("显性绩效分", row["explicit_performance_score"]),
         ("岗位匹配分", row["role_match_score"]),
         ("隐性贡献分", row["hidden_contribution_score"]),
         ("发展潜力分", row["development_potential_score"]),
         ("总评分", row["total_score"]),
-        ("晋升风险等级", row["promotion_risk_level"]),
     ]
     for column, (label, value) in zip(score_cols, score_items):
-        if label == "晋升风险等级":
-            column.markdown(f"**{label}**  \n{risk_badge(value)}", unsafe_allow_html=True)
-        else:
-            column.metric(label, f"{value:.1f}")
+        column.metric(label, f"{value:.1f}")
+
+    context_cols = st.columns(2)
+    context_cols[0].metric("公平感评分", f"{row['fairness_score']:.1f}")
+    context_cols[1].markdown(
+        f"**晋升风险等级**  \n{risk_badge(row['promotion_risk_level'])}",
+        unsafe_allow_html=True,
+    )
 
     chart_col, note_col = st.columns([1.2, 1])
     with chart_col:
@@ -316,8 +319,9 @@ def page_employee_detail(df: pd.DataFrame) -> None:
                     row["role_match_score"],
                     row["hidden_contribution_score"],
                     row["development_potential_score"],
+                    row["fairness_score"],
                 ],
-                theta=["显性绩效分", "岗位匹配分", "隐性贡献分", "发展潜力分"],
+                theta=["显性绩效分", "岗位匹配分", "隐性贡献分", "发展潜力分", "公平感评分"],
                 fill="toself",
                 name=row["name"],
                 line_color="#2563eb",
@@ -449,6 +453,104 @@ def page_feedback_report(df: pd.DataFrame) -> None:
     )
 
 
+def page_scoring_appendix() -> None:
+    st.title("评分依据附录")
+    st.markdown(
+        '<div class="section-note">本页说明员工详情页中多维评分、风险等级和 AI 辅助建议的判断依据，帮助 HR 理解模型逻辑并进行人工校准。</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.subheader("多维评分来源")
+    score_source_df = pd.DataFrame(
+        [
+            {
+                "评分项": "显性绩效分",
+                "判断依据": "KPI 完成情况、考试成绩、经理评分、培训时长",
+                "权重 / 说明": "KPI 45%，考试 25%，经理评分 20%，培训时长 10%",
+            },
+            {
+                "评分项": "岗位匹配分",
+                "判断依据": "按照目标晋升岗位选择不同能力模型",
+                "权重 / 说明": "技术负责人、团队管理者、HRBP 使用不同岗位权重",
+            },
+            {
+                "评分项": "隐性贡献分",
+                "判断依据": "跨部门协作、技术攻关、带教新人、知识分享、冲突处理、组织判断等",
+                "权重 / 说明": "用于识别 KPI 之外的组织贡献",
+            },
+            {
+                "评分项": "发展潜力分",
+                "判断依据": "经理评分、同事评分、考试成绩、培训时长、管理能力证据、高潜标记",
+                "权重 / 说明": "高潜员工额外加 3 分，最高不超过 100 分",
+            },
+            {
+                "评分项": "公平感评分",
+                "判断依据": "员工对晋升过程透明度、公平性和信任感的模拟评分",
+                "权重 / 说明": "不计入总评分；低于 65 会作为风险信号",
+            },
+            {
+                "评分项": "总评分",
+                "判断依据": "显性绩效分、岗位匹配分、隐性贡献分、发展潜力分",
+                "权重 / 说明": "显性绩效 25%，岗位匹配 40%，隐性贡献 20%，发展潜力 15%",
+            },
+        ]
+    )
+    st.dataframe(score_source_df, hide_index=True, use_container_width=True)
+
+    st.subheader("岗位匹配分模型")
+    role_model_df = pd.DataFrame(
+        [
+            ["技术负责人", "KPI 完成情况", "25%"],
+            ["技术负责人", "技术攻关", "30%"],
+            ["技术负责人", "项目难度", "20%"],
+            ["技术负责人", "跨部门协作", "15%"],
+            ["技术负责人", "知识分享 / 带教新人", "10%"],
+            ["团队管理者", "团队绩效", "25%"],
+            ["团队管理者", "团队满意度", "25%"],
+            ["团队管理者", "人才培养", "20%"],
+            ["团队管理者", "跨部门协作", "15%"],
+            ["团队管理者", "冲突处理 / 组织判断", "15%"],
+            ["HRBP", "员工满意度", "25%"],
+            ["HRBP", "业务支持效果", "25%"],
+            ["HRBP", "员工关系处理", "20%"],
+            ["HRBP", "项目推动能力", "15%"],
+            ["HRBP", "数据分析能力", "15%"],
+        ],
+        columns=["目标晋升岗位", "能力维度", "权重"],
+    )
+    st.dataframe(role_model_df, hide_index=True, use_container_width=True)
+
+    st.subheader("风险等级判断")
+    risk_df = pd.DataFrame(
+        [
+            ["岗位匹配分低于 60", "加 2 分", "目标岗位能力证据明显不足"],
+            ["岗位匹配分低于 70", "加 1 分", "目标岗位匹配度处于观察区间"],
+            ["KPI 高于 85 且岗位匹配低于 65", "加 2 分", "高绩效执行者可能不等于高潜管理者"],
+            ["申请团队管理者但管理能力证据低于 60", "加 2 分", "管理岗履新风险较高"],
+            ["团队管理者候选人的团队满意度低于 60", "加 1 分", "团队带动和组织氛围存在风险"],
+            ["AI 总评分与经理评分差异超过 20 分", "加 1 分", "机器评分和人工评价出现明显不一致"],
+            ["公平感评分低于 65", "加 1 分", "员工对晋升机制的信任感偏低"],
+            ["总评分低于 65", "加 1 分", "晋升基础不足"],
+        ],
+        columns=["触发条件", "风险点", "判断含义"],
+    )
+    st.dataframe(risk_df, hide_index=True, use_container_width=True)
+    st.markdown("风险点累计后，0-1 分为低风险，2-3 分为中风险，4 分及以上为高风险。")
+
+    st.subheader("AI 辅助建议规则")
+    recommendation_df = pd.DataFrame(
+        [
+            ["建议晋升", "总评分 ≥ 80，且风险等级为低风险，且未触发人工复核规则"],
+            ["进入人工复核", "总评分在 65-79 之间，或触发任一人工复核规则"],
+            ["暂缓晋升并制定发展计划", "总评分 < 65，且未出现需要优先人工复核的复杂异常"],
+        ],
+        columns=["AI 辅助建议", "判断依据"],
+    )
+    st.dataframe(recommendation_df, hide_index=True, use_container_width=True)
+
+    st.info("所有评分均为 HR 辅助参考，最终晋升结论应结合项目证据、管理者校准、360 度反馈和晋升委员会判断。")
+
+
 def main() -> None:
     inject_style()
     df = load_employee_data()
@@ -457,7 +559,7 @@ def main() -> None:
     st.sidebar.caption("智能晋升评估助手")
     page = st.sidebar.radio(
         "导航",
-        ["首页总览", "员工评估详情", "隐性贡献识别器", "人工复核池", "可解释反馈报告"],
+        ["首页总览", "员工评估详情", "隐性贡献识别器", "人工复核池", "可解释反馈报告", "评分依据附录"],
     )
     st.sidebar.divider()
     st.sidebar.markdown("**评估原则**")
@@ -471,8 +573,10 @@ def main() -> None:
         page_hidden_contribution()
     elif page == "人工复核池":
         page_review_pool(df)
-    else:
+    elif page == "可解释反馈报告":
         page_feedback_report(df)
+    else:
+        page_scoring_appendix()
 
     render_footer()
 
