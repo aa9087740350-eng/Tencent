@@ -194,50 +194,46 @@ def page_dashboard(df: pd.DataFrame) -> None:
         .reset_index()
     )
     department_summary["晋升推荐比例"] = department_summary["推荐晋升人数"] / department_summary["参与人数"] * 100
-    department_summary["其他申请人数"] = department_summary["参与人数"] - department_summary["推荐晋升人数"]
     department_summary = department_summary.sort_values(["参与人数", "晋升推荐比例"], ascending=[False, False])
-    department_plot_df = department_summary.melt(
-        id_vars=["department", "参与人数", "推荐晋升人数", "晋升推荐比例"],
-        value_vars=["其他申请人数", "推荐晋升人数"],
-        var_name="申请结果",
-        value_name="人数",
-    )
-    department_plot_df["柱内标签"] = department_plot_df["人数"].apply(lambda value: str(int(value)) if value > 0 else "")
-    department_fig = px.bar(
-        department_plot_df,
-        x="department",
-        y="人数",
-        color="申请结果",
-        text="柱内标签",
-        barmode="stack",
-        title="各部门申请人数与推荐晋升人数占比",
-        labels={"department": "部门", "人数": "申请人数", "申请结果": "申请结果"},
-        color_discrete_map={"其他申请人数": "#dbeafe", "推荐晋升人数": "#2563eb"},
-        custom_data=["参与人数", "推荐晋升人数", "晋升推荐比例"],
-    )
-    department_fig.update_traces(
-        texttemplate="%{text}",
-        textposition="inside",
-        hovertemplate=(
-            "部门：%{x}<br>"
-            "%{fullData.name}：%{y} 人<br>"
-            "总申请人数：%{customdata[0]} 人<br>"
-            "推荐晋升人数：%{customdata[1]} 人<br>"
-            "推荐占比：%{customdata[2]:.1f}%<extra></extra>"
-        ),
-    )
-    for _, row in department_summary.iterrows():
-        department_fig.add_annotation(
-            x=row["department"],
-            y=row["参与人数"],
-            text=f"{int(row['推荐晋升人数'])}/{int(row['参与人数'])}",
-            showarrow=False,
-            yshift=10,
-            font=dict(size=11, color="#475569"),
+    department_fig = go.Figure()
+    department_fig.add_trace(
+        go.Bar(
+            x=department_summary["department"],
+            y=department_summary["参与人数"],
+            name="总申请人数",
+            marker_color="#dbeafe",
+            width=0.72,
+            customdata=department_summary[["参与人数", "推荐晋升人数", "晋升推荐比例"]],
+            hovertemplate=(
+                "部门：%{x}<br>"
+                "总申请人数：%{customdata[0]} 人<br>"
+                "推荐晋升人数：%{customdata[1]} 人<br>"
+                "推荐占比：%{customdata[2]:.1f}%<extra></extra>"
+            ),
         )
+    )
+    department_fig.add_trace(
+        go.Bar(
+            x=department_summary["department"],
+            y=department_summary["推荐晋升人数"],
+            name="推荐晋升人数",
+            marker_color="#2563eb",
+            width=0.38,
+            customdata=department_summary[["参与人数", "推荐晋升人数", "晋升推荐比例"]],
+            hovertemplate=(
+                "部门：%{x}<br>"
+                "总申请人数：%{customdata[0]} 人<br>"
+                "推荐晋升人数：%{customdata[1]} 人<br>"
+                "推荐占比：%{customdata[2]:.1f}%<extra></extra>"
+            ),
+        )
+    )
     department_fig.update_layout(
-        legend_title_text="申请结果",
+        title="各部门申请人数与推荐晋升人数占比",
+        barmode="overlay",
+        xaxis_title="部门",
         yaxis=dict(title="申请人数", dtick=1, range=[0, max(department_summary["参与人数"]) + 1]),
+        legend_title_text="人数类型",
         margin=dict(t=60, b=60),
     )
     left.plotly_chart(department_fig, use_container_width=True)
@@ -296,18 +292,34 @@ def page_dashboard(df: pd.DataFrame) -> None:
     dimension_fig.update_layout(showlegend=False, yaxis_range=[0, 105], margin=dict(t=60, b=40))
     left.plotly_chart(dimension_fig, use_container_width=True)
 
-    diff_df = df.assign(评分差异=df["total_score"] - df["manager_score"])
-    diff_fig = px.histogram(
-        diff_df,
+    diff_df = df.assign(评分差异=(df["total_score"] - df["manager_score"]).round(1))
+    diff_line_df = (
+        diff_df.groupby("评分差异")
+        .size()
+        .reset_index(name="人数")
+        .sort_values("评分差异")
+    )
+    diff_fig = px.line(
+        diff_line_df,
         x="评分差异",
-        nbins=10,
+        y="人数",
         title="AI 评分与人工评价差异分布",
-        labels={"评分差异": "AI 总评分 - 经理评分"},
-        color_discrete_sequence=["#2563eb"],
+        labels={"评分差异": "AI 总评分 - 经理评分", "人数": "人数"},
+        markers=True,
+    )
+    diff_fig.update_traces(
+        line=dict(color="#2563eb", width=3),
+        marker=dict(size=8, color="#2563eb"),
+        hovertemplate="评分差异：%{x:.1f}<br>人数：%{y} 人<extra></extra>",
     )
     diff_fig.add_vline(x=20, line_dash="dash", line_color="#dc2626", annotation_text="差异 +20")
     diff_fig.add_vline(x=-20, line_dash="dash", line_color="#dc2626", annotation_text="差异 -20")
-    diff_fig.update_layout(yaxis_title="人数", margin=dict(t=60, b=40))
+    diff_fig.update_layout(
+        yaxis=dict(title="人数", dtick=1, rangemode="tozero"),
+        xaxis_title="AI 总评分 - 经理评分",
+        showlegend=False,
+        margin=dict(t=60, b=40),
+    )
     right.plotly_chart(diff_fig, use_container_width=True)
 
 
@@ -334,23 +346,21 @@ def page_employee_detail(df: pd.DataFrame) -> None:
             render_info_box(label, value)
 
     st.subheader("多维评分")
-    score_cols = st.columns(5)
+    score_cols = st.columns(6)
     score_items = [
         ("显性绩效分", row["explicit_performance_score"]),
         ("岗位匹配分", row["role_match_score"]),
         ("隐性贡献分", row["hidden_contribution_score"]),
         ("发展潜力分", row["development_potential_score"]),
         ("总评分", row["total_score"]),
+        ("公平感评分", row["fairness_score"]),
     ]
     for column, (label, value) in zip(score_cols, score_items):
         column.metric(label, f"{value:.1f}")
 
-    context_cols = st.columns(2)
-    context_cols[0].metric("公平感评分", f"{row['fairness_score']:.1f}")
-    context_cols[1].markdown(
-        f"**晋升风险等级**  \n{risk_badge(row['promotion_risk_level'])}",
-        unsafe_allow_html=True,
-    )
+    risk_cols = st.columns(6)
+    with risk_cols[0]:
+        render_info_box("晋升风险等级", risk_badge(row["promotion_risk_level"]))
 
     chart_col, note_col = st.columns([1.2, 1])
     with chart_col:
@@ -362,9 +372,8 @@ def page_employee_detail(df: pd.DataFrame) -> None:
                     row["role_match_score"],
                     row["hidden_contribution_score"],
                     row["development_potential_score"],
-                    row["fairness_score"],
                 ],
-                theta=["显性绩效分", "岗位匹配分", "隐性贡献分", "发展潜力分", "公平感评分"],
+                theta=["显性绩效分", "岗位匹配分", "隐性贡献分", "发展潜力分"],
                 fill="toself",
                 name=row["name"],
                 line_color="#2563eb",
