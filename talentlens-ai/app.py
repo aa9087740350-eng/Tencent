@@ -194,18 +194,52 @@ def page_dashboard(df: pd.DataFrame) -> None:
         .reset_index()
     )
     department_summary["晋升推荐比例"] = department_summary["推荐晋升人数"] / department_summary["参与人数"] * 100
-    department_fig = px.bar(
-        department_summary.sort_values("晋升推荐比例", ascending=False),
-        x="department",
-        y="晋升推荐比例",
-        text="晋升推荐比例",
-        color="推荐晋升人数",
-        color_continuous_scale=["#dbeafe", "#2563eb"],
-        title="各部门晋升推荐比例",
-        labels={"department": "部门", "晋升推荐比例": "推荐比例（%）", "推荐晋升人数": "推荐人数"},
+    department_summary["其他申请人数"] = department_summary["参与人数"] - department_summary["推荐晋升人数"]
+    department_summary = department_summary.sort_values(["参与人数", "晋升推荐比例"], ascending=[False, False])
+    department_plot_df = department_summary.melt(
+        id_vars=["department", "参与人数", "推荐晋升人数", "晋升推荐比例"],
+        value_vars=["其他申请人数", "推荐晋升人数"],
+        var_name="申请结果",
+        value_name="人数",
     )
-    department_fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-    department_fig.update_layout(showlegend=False, yaxis_range=[0, 105], margin=dict(t=60, b=40))
+    department_plot_df["柱内标签"] = department_plot_df["人数"].apply(lambda value: str(int(value)) if value > 0 else "")
+    department_fig = px.bar(
+        department_plot_df,
+        x="department",
+        y="人数",
+        color="申请结果",
+        text="柱内标签",
+        barmode="stack",
+        title="各部门申请人数与推荐晋升人数占比",
+        labels={"department": "部门", "人数": "申请人数", "申请结果": "申请结果"},
+        color_discrete_map={"其他申请人数": "#dbeafe", "推荐晋升人数": "#2563eb"},
+        custom_data=["参与人数", "推荐晋升人数", "晋升推荐比例"],
+    )
+    department_fig.update_traces(
+        texttemplate="%{text}",
+        textposition="inside",
+        hovertemplate=(
+            "部门：%{x}<br>"
+            "%{fullData.name}：%{y} 人<br>"
+            "总申请人数：%{customdata[0]} 人<br>"
+            "推荐晋升人数：%{customdata[1]} 人<br>"
+            "推荐占比：%{customdata[2]:.1f}%<extra></extra>"
+        ),
+    )
+    for _, row in department_summary.iterrows():
+        department_fig.add_annotation(
+            x=row["department"],
+            y=row["参与人数"],
+            text=f"{int(row['推荐晋升人数'])}/{int(row['参与人数'])}",
+            showarrow=False,
+            yshift=10,
+            font=dict(size=11, color="#475569"),
+        )
+    department_fig.update_layout(
+        legend_title_text="申请结果",
+        yaxis=dict(title="申请人数", dtick=1, range=[0, max(department_summary["参与人数"]) + 1]),
+        margin=dict(t=60, b=60),
+    )
     left.plotly_chart(department_fig, use_container_width=True)
 
     risk_counts = (
@@ -215,16 +249,25 @@ def page_dashboard(df: pd.DataFrame) -> None:
         .reset_index()
     )
     risk_counts.columns = ["风险等级", "人数"]
-    risk_fig = px.bar(
+    risk_fig = px.pie(
         risk_counts,
-        x="风险等级",
-        y="人数",
+        names="风险等级",
+        values="人数",
+        title="晋升风险分布",
         color="风险等级",
         color_discrete_map=RISK_COLOR_MAP,
-        title="晋升风险分布",
-        text="人数",
+        hole=0.42,
     )
-    risk_fig.update_layout(showlegend=False, margin=dict(t=60, b=40))
+    risk_fig.update_traces(
+        texttemplate="%{label}<br>%{value} 人<br>%{percent}",
+        textposition="inside",
+        hovertemplate="风险等级：%{label}<br>人数：%{value} 人<br>占比：%{percent}<extra></extra>",
+        marker=dict(line=dict(color="#ffffff", width=2)),
+    )
+    risk_fig.update_layout(
+        legend_title_text="风险等级",
+        margin=dict(t=60, b=40),
+    )
     right.plotly_chart(risk_fig, use_container_width=True)
 
     left, right = st.columns(2)
