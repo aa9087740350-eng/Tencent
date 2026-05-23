@@ -292,34 +292,18 @@ def page_dashboard(df: pd.DataFrame) -> None:
     dimension_fig.update_layout(showlegend=False, yaxis_range=[0, 105], margin=dict(t=60, b=40))
     left.plotly_chart(dimension_fig, use_container_width=True)
 
-    diff_df = df.assign(评分差异=(df["total_score"] - df["manager_score"]).round(1))
-    diff_line_df = (
-        diff_df.groupby("评分差异")
-        .size()
-        .reset_index(name="人数")
-        .sort_values("评分差异")
-    )
-    diff_fig = px.line(
-        diff_line_df,
+    diff_df = df.assign(评分差异=df["total_score"] - df["manager_score"])
+    diff_fig = px.histogram(
+        diff_df,
         x="评分差异",
-        y="人数",
+        nbins=10,
         title="AI 评分与人工评价差异分布",
-        labels={"评分差异": "AI 总评分 - 经理评分", "人数": "人数"},
-        markers=True,
-    )
-    diff_fig.update_traces(
-        line=dict(color="#2563eb", width=3),
-        marker=dict(size=8, color="#2563eb"),
-        hovertemplate="评分差异：%{x:.1f}<br>人数：%{y} 人<extra></extra>",
+        labels={"评分差异": "AI 总评分 - 经理评分"},
+        color_discrete_sequence=["#2563eb"],
     )
     diff_fig.add_vline(x=20, line_dash="dash", line_color="#dc2626", annotation_text="差异 +20")
     diff_fig.add_vline(x=-20, line_dash="dash", line_color="#dc2626", annotation_text="差异 -20")
-    diff_fig.update_layout(
-        yaxis=dict(title="人数", dtick=1, rangemode="tozero"),
-        xaxis_title="AI 总评分 - 经理评分",
-        showlegend=False,
-        margin=dict(t=60, b=40),
-    )
+    diff_fig.update_layout(yaxis_title="人数", margin=dict(t=60, b=40))
     right.plotly_chart(diff_fig, use_container_width=True)
 
 
@@ -346,21 +330,28 @@ def page_employee_detail(df: pd.DataFrame) -> None:
             render_info_box(label, value)
 
     st.subheader("多维评分")
-    score_cols = st.columns(6)
+    score_cols = st.columns(5)
     score_items = [
         ("显性绩效分", row["explicit_performance_score"]),
         ("岗位匹配分", row["role_match_score"]),
         ("隐性贡献分", row["hidden_contribution_score"]),
         ("发展潜力分", row["development_potential_score"]),
         ("总评分", row["total_score"]),
-        ("公平感评分", row["fairness_score"]),
     ]
     for column, (label, value) in zip(score_cols, score_items):
         column.metric(label, f"{value:.1f}")
 
-    risk_cols = st.columns(6)
-    with risk_cols[0]:
-        render_info_box("晋升风险等级", risk_badge(row["promotion_risk_level"]))
+    context_cols = st.columns([1, 1, 3])
+    context_cols[0].metric("公平感评分", f"{row['fairness_score']:.1f}")
+    context_cols[1].markdown(
+        f"""
+        <div style="padding: 14px 0 0 0;">
+            <div style="color:#64748b;font-size:0.9rem;margin-bottom:8px;">晋升风险等级</div>
+            <div style="font-size:1.15rem;">{risk_badge(row["promotion_risk_level"])}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     chart_col, note_col = st.columns([1.2, 1])
     with chart_col:
